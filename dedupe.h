@@ -5,7 +5,7 @@
 //#define F2FS_NO_HASH 1
 #define F2FS_REVERSE_ADDR 1
 
-#define DEDUPE_SEGMENT_COUNT 6
+#define DEDUPE_SEGMENT_COUNT 18
 #define DEDUPE_PER_BLOCK (PAGE_CACHE_SIZE/sizeof(struct dedupe))
 
 typedef u32 block_t;
@@ -27,6 +27,7 @@ struct dedupe_info
 #endif
 	unsigned int logical_blk_cnt;
 	unsigned int physical_blk_cnt;
+	unsigned int dedupe_all;
 	struct dedupe* dedupe_md;
 	char *dedupe_md_dirty_bitmap;	/*bitmap for dirty dedupe blocks*/
 	char *dedupe_bitmap;				/*bitmap for dedupe checkpoint*/

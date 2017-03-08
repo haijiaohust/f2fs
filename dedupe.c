@@ -87,6 +87,7 @@ struct dedupe *f2fs_dedupe_search(u8 hash[], struct dedupe_info *dedupe_info)
 		if(unlikely(cur->ref&&!memcmp(hash, cur->hash, dedupe_info->digest_len)))
 		{
 			dedupe_info->logical_blk_cnt++;
+			dedupe_info->dedupe_all++;
 			return cur;
 		}
 	}
@@ -95,6 +96,7 @@ struct dedupe *f2fs_dedupe_search(u8 hash[], struct dedupe_info *dedupe_info)
 		if(unlikely(cur->ref&&!memcmp(hash, cur->hash, dedupe_info->digest_len)))
 		{
 			dedupe_info->logical_blk_cnt++;
+			dedupe_info->dedupe_all++;
 			return cur;
 		}
 	}
@@ -245,6 +247,7 @@ int f2fs_dedupe_add(u8 hash[], struct dedupe_info *dedupe_info, block_t addr)
 #endif
 		set_dedupe_dirty(dedupe_info, cur);
 		dedupe_info->logical_blk_cnt++;
+		dedupe_info->dedupe_all++;
 		dedupe_info->physical_blk_cnt++;
 	}
 	return ret;
@@ -271,6 +274,7 @@ int init_dedupe_info(struct dedupe_info *dedupe_info)
 {
 	int ret = 0;
 	dedupe_info->digest_len = 16;
+	dedupe_info->dedupe_all = 0;
 	spin_lock_init(&dedupe_info->lock);
 	INIT_LIST_HEAD(&dedupe_info->queue);
 	dedupe_info->dedupe_md = vmalloc(dedupe_info->dedupe_size);
