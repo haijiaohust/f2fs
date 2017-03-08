@@ -113,6 +113,23 @@ int f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info)
 
 	spin_lock(&dedupe_info->lock);
 	if(NEW_ADDR == addr) return -1;
+
+#ifdef F2FS_REVERSE_ADDR
+	if(-1 == dedupe_info->reverse_addr[addr])
+	{
+		return -1;
+	}
+	cur = &dedupe_info->dedupe_md[dedupe_info->reverse_addr[addr]];
+	if(cur->ref)
+	{
+		goto aa;
+	}
+	else
+	{
+		return -1;
+	}
+#endif
+
 	for(cur=c; cur < dedupe_info->dedupe_md + dedupe_info->dedupe_block_count * DEDUPE_PER_BLOCK; cur++)
 	{
 		if(unlikely(cur->ref && addr == cur->addr))
@@ -145,6 +162,9 @@ int f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info)
 	{
 		if(unlikely(cur->ref && addr == cur->addr))
 		{
+#ifdef F2FS_REVERSE_ADDR
+aa:
+#endif
 			cur->ref--;
 			dedupe_info->logical_blk_cnt--;
 			dedupe_info->last_delete_dedupe = cur;
@@ -162,6 +182,9 @@ int f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info)
 				cur->addr = 0;
 				dedupe_info->physical_blk_cnt--;
 
+#ifdef F2FS_REVERSE_ADDR
+				dedupe_info->reverse_addr[addr] = -1;
+#endif
 				return 0;
 			}
 			else
@@ -209,13 +232,16 @@ int f2fs_dedupe_add(u8 hash[], struct dedupe_info *dedupe_info, block_t addr)
 		cur->addr = addr;
 		cur->ref = 1;
 		memcpy(cur->hash, hash, dedupe_info->digest_len);
+#ifdef F2FS_REVERSE_ADDR
+		dedupe_info->reverse_addr[addr] = cur - dedupe_info->dedupe_md;
+#endif
 #ifdef F2FS_BLOOM_FILTER
-				pos = (unsigned int *)cur->hash;
-				for(i=0;i<dedupe_info->bloom_filter_hash_fun_count;i++)
-				{
-					dedupe_info->bloom_filter[*(pos++)&dedupe_info->bloom_filter_mask]++;
-					//printk("add %d\n", *(pos++)&dedupe_info->bloom_filter_mask);
-				}
+		pos = (unsigned int *)cur->hash;
+		for(i=0;i<dedupe_info->bloom_filter_hash_fun_count;i++)
+		{
+			dedupe_info->bloom_filter[*(pos++)&dedupe_info->bloom_filter_mask]++;
+			//printk("add %d\n", *(pos++)&dedupe_info->bloom_filter_mask);
+		}
 #endif
 		set_dedupe_dirty(dedupe_info, cur);
 		dedupe_info->logical_blk_cnt++;
@@ -250,6 +276,7 @@ int init_dedupe_info(struct dedupe_info *dedupe_info)
 	dedupe_info->dedupe_md = vmalloc(dedupe_info->dedupe_size);
 	memset(dedupe_info->dedupe_md, 0, dedupe_info->dedupe_size);
 	dedupe_info->dedupe_md_dirty_bitmap = kzalloc(dedupe_info->dedupe_bitmap_size, GFP_KERNEL);
+	dedupe_info->dedupe_segment_count = DEDUPE_SEGMENT_COUNT;
 #ifdef F2FS_BLOOM_FILTER
 	dedupe_info->bloom_filter_mask = (1<<(f2fs_dedupe_O_log2(dedupe_info->dedupe_block_count) + 10)) -1;
 	dedupe_info->bloom_filter = vmalloc((dedupe_info->bloom_filter_mask + 1) * sizeof(unsigned int));
@@ -268,6 +295,9 @@ void exit_dedupe_info(struct dedupe_info *dedupe_info)
 	vfree(dedupe_info->dedupe_md);
 	kfree(dedupe_info->dedupe_md_dirty_bitmap);
 	kfree(dedupe_info->dedupe_bitmap);
+#ifdef F2FS_REVERSE_ADDR
+	vfree(dedupe_info->reverse_addr);
+#endif
 	crypto_free_shash(dedupe_info->tfm);
 #ifdef F2FS_BLOOM_FILTER
 	vfree(dedupe_info->bloom_filter);

@@ -3,7 +3,9 @@
 
 #define F2FS_BLOOM_FILTER 1
 //#define F2FS_NO_HASH 1
+#define F2FS_REVERSE_ADDR 1
 
+#define DEDUPE_SEGMENT_COUNT 6
 #define DEDUPE_PER_BLOCK (PAGE_CACHE_SIZE/sizeof(struct dedupe))
 
 typedef u32 block_t;
@@ -28,6 +30,7 @@ struct dedupe_info
 	struct dedupe* dedupe_md;
 	char *dedupe_md_dirty_bitmap;	/*bitmap for dirty dedupe blocks*/
 	char *dedupe_bitmap;				/*bitmap for dedupe checkpoint*/
+	unsigned int dedupe_segment_count;
 	unsigned int dedupe_bitmap_size;	/*bitmap size of dedupe_md_dirty_bitmap&dedupe_bitmap*/
 	unsigned int dedupe_size;			/*size of dedupes in memory*/
 	unsigned int dedupe_block_count;
@@ -36,6 +39,9 @@ struct dedupe_info
 	spinlock_t lock;
 	struct crypto_shash *tfm;
 	unsigned int crypto_shash_descsize;
+#ifdef F2FS_REVERSE_ADDR
+	int *reverse_addr;
+#endif
 };
 
 
