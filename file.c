@@ -321,7 +321,7 @@ static inline int unsigned_offsets(struct file *file)
 	return file->f_mode & FMODE_UNSIGNED_OFFSET;
 }
 
-static loff_t vfs_setpos(struct file *file, loff_t offset, loff_t maxsize)
+loff_t vfs_setpos(struct file *file, loff_t offset, loff_t maxsize)
 {
 	if (offset < 0 && !unsigned_offsets(file))
 		return -EINVAL;
@@ -955,7 +955,12 @@ static int f2fs_collapse_range(struct inode *inode, loff_t offset, loff_t len)
 	if (ret)
 		return ret;
 
-	truncate_pagecache(inode, 0, offset);
+#if defined(CONFIG_ARM) || defined(CONFIG_GOLDFISH) || defined(CONFIG_ARM64)
+		truncate_pagecache(inode, 0, offset);
+#else
+		truncate_pagecache(inode, offset);
+#endif
+
 
 	ret = f2fs_do_collapse(inode, pg_start, pg_end);
 	if (ret)
@@ -1114,7 +1119,11 @@ static int f2fs_insert_range(struct inode *inode, loff_t offset, loff_t len)
 	if (ret)
 		return ret;
 
+#if defined(CONFIG_ARM) || defined(CONFIG_GOLDFISH) || defined(CONFIG_ARM64)
 	truncate_pagecache(inode, 0, offset);
+#else
+	truncate_pagecache(inode, offset);
+#endif
 
 	pg_start = offset >> PAGE_CACHE_SHIFT;
 	pg_end = (offset + len) >> PAGE_CACHE_SHIFT;
@@ -1238,8 +1247,10 @@ noalloc:
 	return ret;
 }
 
+#ifndef FALLOC_FL_COLLAPSE_RANGE
 #define FALLOC_FL_COLLAPSE_RANGE	0X08
 #define FALLOC_FL_ZERO_RANGE		0X10
+#endif
 #define FALLOC_FL_INSERT_RANGE		0X20
 
 static long f2fs_fallocate(struct file *file, int mode,

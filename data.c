@@ -79,7 +79,9 @@ static void f2fs_write_end_io(struct bio *bio, int err)
 			f2fs_stop_checkpoint(sbi);
 			printk(KERN_CRIT "f2fs reboot for bio submit error! erro_num = %d\n", err);
 			WARN_ON(1);
+#ifdef CONFIG_ARM64
 			kernel_restart("mountfail");
+#endif
 		}
 		end_page_writeback(page);
 		dec_page_count(sbi, F2FS_WRITEBACK);
@@ -1386,7 +1388,11 @@ static void f2fs_write_failed(struct address_space *mapping, loff_t to)
 	struct inode *inode = mapping->host;
 
 	if (to > inode->i_size) {
+#if defined(CONFIG_ARM) || defined(CONFIG_GOLDFISH) || defined(CONFIG_ARM64)
 		truncate_pagecache(inode, 0, inode->i_size);
+#else
+		truncate_pagecache(inode, inode->i_size);
+#endif
 		truncate_blocks(inode, inode->i_size, true);
 	}
 }
@@ -1626,7 +1632,11 @@ out:
 	return err;
 }
 
+#if defined(CONFIG_GOLDFISH)
+void f2fs_invalidate_page(struct page *page, unsigned int offset, unsigned int a)
+#else
 void f2fs_invalidate_page(struct page *page, unsigned long offset)
+#endif
 {
 	struct inode *inode = page->mapping->host;
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);

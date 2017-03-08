@@ -543,7 +543,7 @@ unsigned int f2fs_shrink_extent_tree(struct f2fs_sb_info *sbi, int nr_shrink)
 {
 	struct extent_tree *et, *next;
 	struct extent_node *en;
-	struct radix_tree_root *root = &sbi->extent_tree_root;
+	//struct radix_tree_root *root = &sbi->extent_tree_root;
 	unsigned int node_cnt = 0, tree_cnt = 0;
 	int remained;
 

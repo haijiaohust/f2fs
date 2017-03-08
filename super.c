@@ -1117,7 +1117,7 @@ retry:
 	}
 
 	/* sanity checking of raw super */
-	if (sanity_check_raw_super(sb, buffer->b_data + F2FS_SUPER_OFFSET)) {
+	if (sanity_check_raw_super(sb, (struct f2fs_super_block *)(buffer->b_data + F2FS_SUPER_OFFSET))) {
 		brelse(buffer);
 		*recovery = 1;
 		f2fs_msg(sb, KERN_INFO,

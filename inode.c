@@ -12,11 +12,27 @@
 #include <linux/f2fs_fs.h>
 #include <linux/buffer_head.h>
 #include <linux/writeback.h>
+#include <linux/bitops.h>
 
 #include "f2fs.h"
 #include "node.h"
 
 #include <trace/events/f2fs.h>
+
+#ifndef set_mask_bits
+#define set_mask_bits(ptr, _mask, _bits)	\
+({								\
+	const typeof(*ptr) mask = (_mask), bits = (_bits);	\
+	typeof(*ptr) old, new;					\
+								\
+	do {							\
+		old = ACCESS_ONCE(*ptr);			\
+		new = (old & ~mask) | bits;			\
+	} while (cmpxchg(ptr, old, new) != old);		\
+								\
+	new;							\
+})
+#endif
 
 void f2fs_set_inode_flags(struct inode *inode)
 {
@@ -279,7 +295,9 @@ retry:
 			f2fs_stop_checkpoint(sbi);
 			printk(KERN_CRIT "f2fs reboot for memory read error! erro_num = %d\n", err);
 			WARN_ON(1);
+#ifdef CONFIG_ARM64
 			kernel_restart("mountfail");
+#endif
 		}
 		return;
 	}

@@ -255,10 +255,11 @@ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
 
 	if (dentry->d_name.len > F2FS_NAME_LEN)
 		return ERR_PTR(-ENAMETOOLONG);
-
+#ifdef CONFIG_ARM64
 	if (flags & LOOKUP_CASE_INSENSITIVE)
 		de = f2fs_find_entry(dir, &dentry->d_name, &page, CASE_INSENSITIVE);
 	else
+#endif
 		de = f2fs_find_entry(dir, &dentry->d_name, &page, CASE_SENSITIVE);
 
 	if (!de)

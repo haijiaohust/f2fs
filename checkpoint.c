@@ -89,7 +89,9 @@ repeat:
 		f2fs_stop_checkpoint(sbi);
 		printk(KERN_CRIT "f2fs reboot for memory error!");
 		WARN_ON(1);
+#ifdef CONFIG_ARM64
 		kernel_restart("mountfail");
+#endif
 	}
 out:
 	mark_page_accessed(page);
