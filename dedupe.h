@@ -7,6 +7,7 @@
 
 #define DEDUPE_SEGMENT_COUNT 18
 #define DEDUPE_PER_BLOCK (PAGE_CACHE_SIZE/sizeof(struct dedupe))
+#define SUMMARY_TABLE_ROW_NUM 25000
 
 typedef u32 block_t;
 
@@ -16,6 +17,16 @@ struct dedupe
 	int ref;
 	u8 hash[16];
 };
+
+struct summary_table_row
+{
+    u8 hash[16];
+    __le32 nid;
+    __le16 ofs_in_node;
+    int flag;
+
+};
+
 
 struct dedupe_info
 {
@@ -40,6 +51,7 @@ struct dedupe_info
 	spinlock_t lock;
 	struct crypto_shash *tfm;
 	unsigned int crypto_shash_descsize;
+    struct summary_table_row *summary_table;
 #ifdef F2FS_REVERSE_ADDR
 	int *reverse_addr;
 #endif

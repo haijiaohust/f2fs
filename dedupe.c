@@ -291,6 +291,7 @@ int init_dedupe_info(struct dedupe_info *dedupe_info)
 	dedupe_info->last_delete_dedupe = dedupe_info->dedupe_md;
 	dedupe_info->tfm = crypto_alloc_shash("md5", 0, 0);
 	dedupe_info->crypto_shash_descsize = crypto_shash_descsize(dedupe_info->tfm);
+    dedupe_info->summary_table = vmalloc(SUMMARY_TABLE_ROW_NUM * sizeof(struct summary_table_row));
 	return ret;
 }
 
@@ -299,6 +300,7 @@ void exit_dedupe_info(struct dedupe_info *dedupe_info)
 	vfree(dedupe_info->dedupe_md);
 	kfree(dedupe_info->dedupe_md_dirty_bitmap);
 	kfree(dedupe_info->dedupe_bitmap);
+	vfree(dedupe_info->summary_table);
 #ifdef F2FS_REVERSE_ADDR
 	vfree(dedupe_info->reverse_addr);
 #endif

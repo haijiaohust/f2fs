@@ -646,6 +646,229 @@ out:
 	f2fs_put_page(page, 1);
 }
 
+static void move_data_page_dedupe(struct inode *inode, block_t bidx, int gc_type, enum page_type p_type,block_t *new_blkaddr)
+{
+	struct page *page;
+
+	page = get_lock_data_page(inode, bidx);
+	if (IS_ERR(page))
+		return;
+
+	if (gc_type == BG_GC) {
+		if (PageWriteback(page))
+			goto out;
+		set_page_dirty(page);
+		set_cold_data(page);
+	} else {
+		struct f2fs_io_info fio = {
+			.sbi = F2FS_I_SB(inode),
+			.type = p_type,
+			.rw = WRITE_SYNC,
+			.page = page,
+			.encrypted_page = NULL,
+		};
+		set_page_dirty(page);
+		f2fs_wait_on_page_writeback(page, DATA, true);
+		if (clear_page_dirty_for_io(page))
+			inode_dec_dirty_pages(inode);
+		set_cold_data(page);
+		do_write_data_page(&fio);
+
+        *new_blkaddr = fio.blk_addr;
+		clear_cold_data(page);
+	}
+out:
+	f2fs_put_page(page, 1);
+
+}
+
+
+static int modifyDedupedPageInode(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,block_t *new_blkaddr,block_t bidx){
+	struct super_block *sb = sbi->sb;
+    struct page *node_page;
+    struct page *page;
+	nid_t nid;
+	unsigned int ofs_in_node;
+	struct dnode_of_data dn;
+	struct inode *inode;
+	struct node_info dni; /* dnode info for the data */
+    int err = 0;
+
+	ra_node_page(sbi, le32_to_cpu(sum->nid));
+	nid = le32_to_cpu(sum->nid);
+	ofs_in_node = le16_to_cpu(sum->ofs_in_node);
+    node_page = get_node_page_dedupe(sbi, nid);
+    if (IS_ERR(node_page)){
+        return 0;
+    }
+	//nofs = ofs_of_node(node_page);
+	get_node_info(sbi, nid, &dni);
+    ra_node_page(sbi, dni.ino);
+    inode = f2fs_iget(sb, dni.ino);
+    if (IS_ERR(inode) || is_bad_inode(inode))
+    {
+        printk("inode error\n");
+        return 0;
+    }
+
+	page = get_read_data_page(inode, bidx, READ);
+    if (IS_ERR(page)){
+		return 0;
+    }
+
+    set_new_dnode(&dn, inode, NULL,NULL,0);
+    err = get_dnode_of_data(&dn,page->index,LOOKUP_NODE);
+    if(err){
+        return err;
+    }
+
+    dn.data_blkaddr =  *new_blkaddr;
+	set_data_blkaddr(&dn);
+	f2fs_update_extent_cache(&dn);
+    set_inode_flag(F2FS_I(inode), FI_APPEND_WRITE);
+    return 1;
+}
+
+
+static int gc_data_segment_dedupe(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
+		struct gc_inode_list *gc_list, unsigned int segno, int gc_type)
+{
+	struct super_block *sb = sbi->sb;
+	struct f2fs_summary *entry;
+	block_t start_addr;
+	int off;
+	int phase = 0;
+    int count = 0;
+	u8 hash[16];
+	struct dedupe* dedupe = NULL;
+    struct summary_table_row *summary_table = NULL;
+    struct summary_table_row *temp = NULL;
+   	struct f2fs_summary sum_temp;
+    block_t *new_blkaddr = kmalloc(sizeof(block_t),GFP_KERNEL);
+
+
+
+    summary_table = sbi->dedupe_info.summary_table;
+	start_addr = START_BLOCK(sbi, segno);
+
+next_step:
+	entry = sum;
+
+	for (off = 0; off < sbi->blocks_per_seg; off++, entry++) {
+		struct page *data_page;
+		struct inode *inode;
+		struct node_info dni; /* dnode info for the data */
+		unsigned int ofs_in_node, nofs;
+		block_t start_bidx;
+
+		/* stop BG_GC if there is not enough free sections. */
+		if (gc_type == BG_GC && has_not_enough_free_secs(sbi, 0))
+			return 0;
+
+		if (check_valid_map(sbi, segno, off) == 0)
+			continue;
+
+		if (phase == 0) {
+			ra_node_page(sbi, le32_to_cpu(entry->nid));
+			continue;
+		}
+
+		/* Get an inode by ino with checking validity */
+		if (!is_alive(sbi, entry, &dni, start_addr + off, &nofs))
+			continue;
+
+		if (phase == 1) {
+			ra_node_page(sbi, dni.ino);
+			continue;
+		}
+
+		ofs_in_node = le16_to_cpu(entry->ofs_in_node);
+
+		if (phase == 2) {
+			inode = f2fs_iget(sb, dni.ino);
+			if (IS_ERR(inode) || is_bad_inode(inode))
+				continue;
+
+			/* if encrypted inode, let's go phase 3 */
+			if (f2fs_encrypted_inode(inode) &&
+						S_ISREG(inode->i_mode)) {
+				add_gc_inode(gc_list, inode);
+				continue;
+			}
+
+			start_bidx = start_bidx_of_node(nofs, F2FS_I(inode));
+			data_page = get_read_data_page(inode,
+					start_bidx + ofs_in_node, READA);
+			if (IS_ERR(data_page)) {
+				iput(inode);
+				continue;
+			}
+
+			f2fs_dedupe_calc_hash(data_page, hash, &sbi->dedupe_info);
+			spin_lock(&sbi->dedupe_info.lock);
+			dedupe = f2fs_dedupe_search(hash, &sbi->dedupe_info);
+            		spin_unlock(&sbi->dedupe_info.lock);
+
+
+			f2fs_put_page(data_page, 0);
+			add_gc_inode(gc_list, inode);
+			continue;
+		}
+
+		/* phase 3 */
+		inode = find_gc_inode(gc_list, dni.ino);
+		if (inode) {
+			start_bidx = start_bidx_of_node(nofs, F2FS_I(inode))
+								+ ofs_in_node;
+            	if (f2fs_encrypted_inode(inode) && S_ISREG(inode->i_mode)){
+				move_encrypted_block(inode, start_bidx);
+           	 }else{
+               		 if(!dedupe)
+                	{
+				    move_data_page(inode, start_bidx, gc_type);
+                	}else{
+                    	if((dedupe->ref) > 10)
+                    	{
+                        	move_data_page_dedupe(inode,start_bidx,gc_type,DEDUPE_DATA_REF,new_blkaddr);
+                   	 }else{
+                        	move_data_page_dedupe(inode,start_bidx,gc_type,DEDUPE_DATA,new_blkaddr);
+                    }
+                   	for(temp = summary_table;temp<(summary_table + SUMMARY_TABLE_ROW_NUM);temp++)
+                    	{
+                        	if(temp->flag == 1){
+                           		if(!memcmp(temp->hash, dedupe->hash, sbi->dedupe_info.digest_len))
+                           		 {
+	                                	sum_temp.nid = temp->nid;
+	                                	sum_temp.ofs_in_node = temp->ofs_in_node;
+	                                	sum_temp.version = sum->version;
+	                                	if(modifyDedupedPageInode(sbi,&sum_temp,new_blkaddr,start_bidx)){
+	                                    		printk("success!");
+	                                	}
+	                                	count++;
+                            		}
+                        	}
+
+                    	}
+                }
+            }
+			stat_inc_data_blk_count(sbi, 1, gc_type);
+		}
+	}
+
+	if (++phase < 4)
+		goto next_step;
+
+	if (gc_type == FG_GC) {
+		f2fs_submit_merged_bio(sbi, DATA, WRITE);
+
+		/* return 1 only if FG_GC succefully reclaimed one */
+		if (get_valid_blocks(sbi, segno, 1) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+
 /*
  * This function tries to get parent node of victim data block, and identifies
  * data block validity. If the block is valid, copy that with cold status and
@@ -790,7 +1013,7 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
 		nfree = gc_node_segment(sbi, sum->entries, segno, gc_type);
 		break;
 	case SUM_TYPE_DATA:
-		nfree = gc_data_segment(sbi, sum->entries, gc_list,
+		nfree = gc_data_segment_dedupe(sbi, sum->entries, gc_list,
 							segno, gc_type);
 		break;
 	}

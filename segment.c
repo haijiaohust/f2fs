@@ -1373,6 +1373,9 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 	bool direct_io = (type == CURSEG_DIRECT_IO);
 	u8 hash[16];
 	struct dedupe* dedupe = NULL;
+	struct summary_table_row *summary_table = NULL;
+    struct summary_table_row *temp = NULL;
+    summary_table =  sbi->dedupe_info.summary_table;
 
 	type = direct_io ? CURSEG_WARM_DATA : type;
 
@@ -1400,6 +1403,17 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 	}
 	else
 	{
+        for(temp = summary_table;temp<(summary_table + SUMMARY_TABLE_ROW_NUM);temp++){
+        	if(temp->flag != 1 ){
+                temp->flag = 1;
+                memcpy(temp->hash,hash,sbi->dedupe_info.digest_len);
+
+                temp->nid = sum->nid;
+                temp->ofs_in_node = sum->ofs_in_node;
+                break;
+            }
+
+        }
 		dedupe->ref++;
 		set_dedupe_dirty(&sbi->dedupe_info, dedupe);
 		*new_blkaddr = dedupe->addr;
@@ -1459,7 +1473,18 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 
 static void do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
 {
-	int type = __get_segment_type(fio->page, fio->type);
+	int type = 0;
+
+        if(fio->type == DEDUPE_DATA_REF){
+		//type = CURSEG_DEDUPE_REF_DATA;
+             	fio->type = DATA;
+        	type = __get_segment_type(fio->page, fio->type);
+    	}else if(fio->type == DEDUPE_DATA){
+        	fio->type = DATA;
+        	type = __get_segment_type(fio->page, fio->type);
+    	}else{
+        	type = __get_segment_type(fio->page, fio->type);
+    	}
 
 	allocate_data_block(fio->sbi, fio->page, fio->blk_addr,
 					&fio->blk_addr, sum, type);

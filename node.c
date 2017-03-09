@@ -1077,6 +1077,36 @@ repeat:
 	return page;
 }
 
+struct page *get_node_page_dedupe(struct f2fs_sb_info *sbi, pgoff_t nid)
+{
+	struct page *page;
+	int err;
+repeat:
+	page = grab_cache_page(NODE_MAPPING(sbi), nid);
+	if (!page)
+		return ERR_PTR(-ENOMEM);
+
+	err = read_node_page(page, READ);
+	if (err < 0) {
+		f2fs_put_page(page, 1);
+		return ERR_PTR(err);
+	} else if (err != LOCKED_PAGE) {
+		lock_page(page);
+	}
+
+	if (unlikely(!PageUptodate(page) || nid != nid_of_node(page))) {
+		ClearPageUptodate(page);
+		f2fs_put_page(page, 1);
+		return ERR_PTR(-EIO);
+	}
+	if (unlikely(page->mapping != NODE_MAPPING(sbi))) {
+		f2fs_put_page(page, 1);
+		goto repeat;
+	}
+	mark_page_accessed(page);
+	return page;
+}
+
 /*
  * Return a locked page for the desired node page.
  * And, readahead MAX_RA_NODE number of node pages.

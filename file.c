@@ -563,7 +563,51 @@ truncate_out:
 	return 0;
 }
 
-int truncate_blocks(struct inode *inode, u64 from, bool lock)
+struct inode* get_inode_by_summary(struct summary_table_row* sum, struct f2fs_sb_info* sbi)
+{
+    struct super_block* sb = sbi->sb;
+    nid_t nid;
+    unsigned int ofs_in_node;
+    struct inode* inode;
+    struct node_info dni; /* dnode info for the data */
+
+    nid = le32_to_cpu(sum->nid);
+    ofs_in_node = le16_to_cpu(sum->ofs_in_node);
+    get_node_info(sbi, nid, &dni);
+    inode = f2fs_iget(sb, dni.ino);
+    if (IS_ERR(inode) || is_bad_inode(inode)) {
+        printk("inode error\n");
+        return NULL;
+    }
+
+    return inode;
+}
+
+void delete_summary_info_in_table_by_inode(struct inode* inode, pgoff_t free_from, struct dnode_of_data dn)
+{
+    struct f2fs_sb_info* sbi = F2FS_I_SB(inode);
+    struct summary_table_row* summary_table = NULL;
+    struct summary_table_row* temp = NULL;
+    summary_table = sbi->dedupe_info.summary_table;
+    /*int err = 0;*/
+
+    for (temp = summary_table; temp < (summary_table + SUMMARY_TABLE_ROW_NUM); temp++) {
+        struct inode* ninode;
+        if (1 == temp->flag) {
+            ninode = get_inode_by_summary(temp, sbi);
+            if (ninode == NULL) {
+                continue;
+                printk("inode is NULL!\n");
+            } else {
+                if (0 == memcmp(inode, ninode, sizeof(struct inode))) {
+                    temp->flag = 0;
+                }
+            }
+        }
+    }
+}
+
+int truncate_blocks(struct inode* inode, u64 from, bool lock)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	unsigned int blocksize = inode->i_sb->s_blocksize;
